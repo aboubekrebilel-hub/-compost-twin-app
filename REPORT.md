@@ -15,9 +15,16 @@
   - `GET /api/export.csv` (UTF-8 BOM + RFC-4180 escaping) and `GET /api/export.xlsx` (`exceljs` styled workbook), both supporting `?from=&to=&device_id=`.
   - Optional `GOOGLE_SHEET_WEBHOOK` sync (`src/services/googleSheets.js`) triggered asynchronously after each stored row, with Apps Script setup documented in `docs/google-sheets.md`.
 - **Database Schema & Seeding**:
-  - Postgres schema + indexes in `sql/schema.sql`.
+  - Postgres schema + indexes in `sql/schema.sql` and additive migration in `sql/migration_motor_control.sql` (`control_log` and `control_config`, ending with `notify pgrst, 'reload schema';`).
   - Seed script (`npm run seed` -> `scripts/seed.js`) generating 7 days of simulated compost readings and manual pH entries.
-  - Render deployment blueprint in `render.yaml`.
+  - Render deployment blueprint in `render.yaml` (including `MAX_RUN_SEC=60`).
+- **Motor Control & Automatic Mixing (`src/services/motorControl.js`, `src/services/controlStore.js`, `src/routes/control.js`)**:
+  - Fail-safe in-memory relay states (`{ relay1: false, relay2: false }` on boot/restart) with hard `MAX_RUN_SEC` safety timers and immediate manual `STOP` override.
+  - Persistent per-device configuration (`control_config`) with safe defaults if table/row is missing, and audit trail in `control_log`.
+  - Non-blocking `try/catch` rule evaluation on `POST /api/readings` (`temperature > temp_max`, `oxygen < oxygen_min`, `soil_moisture > moisture_max`), freshness check (`<= 30s`), cooldown tracking (with `control_log` restart fallback), and low-moisture `add_water` alert that blocks motor actuation.
+  - Real-time `control_state` and `control_config` SSE broadcasts, plus tiny `GET /api/device/commands` payload (`{"relay1":bool,"relay2":bool}`).
+- **Backward-Compatible Partial Readings (`src/utils/validators.js`, `src/services/readingBuffer.js`)**:
+  - `POST /api/readings` accepts missing/`null` sensor fields if `device_id` and at least one valid sensor value are present, averaging each metric independently on flush and storing missing fields as `NULL`.
 
 ### Frontend (`public/`)
 - **Public Dashboard (`/` -> `public/index.html`, `public/js/dashboard.js`)**:
@@ -29,6 +36,8 @@
   - Paginated table with date-range filters and CSV/Excel export buttons.
   - Admin login modal storing the password in `sessionStorage` and sending it via `x-admin-password` after backend verification (`POST /api/admin/verify`).
   - Admin-only Manual pH entry form (also shown on Dashboard when signed in) and delete controls (per-row, date range, and delete-all with explicit confirmation modal).
+  - Admin-only **Motor Control** card on Dashboard (`public/index.html`, `public/js/dashboard.js`) with 2-channel START/STOP buttons, duration selector (`10s/30s/60s`), live remaining seconds, offline disable/warning, automatic mixing threshold editor, `Last mix` / `Next mix possible in` countdown, and `Add water` warning.
+  - Partial readings display `--` on Dashboard KPIs and skip `null` points in Chart.js without plotting `0`.
 - **Branding & Localization (`public/css/styles.css`, `public/js/i18n.js`, `public/assets/`)**:
   - Exact palette CSS variables (`#1B4D3E`, `#143B2F`, `#2E7D5B`, `#4CAF7A`, `#FFFFFF`, `#B7D3C6`, `#F2B84B`, `#E5634D`), Poppins/Inter fonts, rounded `16px` cards.
   - Attached brand assets saved as `station.png`, `background.jpg`, and `logo.png` in `public/assets/`, with CSS framing for `logo.png` (matching `#204735` header background), `mix-blend-mode: multiply` light card for `station.png`, darkened overlay for `background.jpg`, and `favicon.png` cropped from the leaf-in-circle icon.
@@ -52,6 +61,11 @@
 | `DELETE /api/readings/all` | `x-admin-password` | Wipe all stored rows (requires `{ "confirm": true }` or `?confirm=true`) |
 | `GET /api/export.csv` | Public | Export filtered readings as CSV |
 | `GET /api/export.xlsx` | Public | Export filtered readings as Excel `.xlsx` |
+| `POST /api/control` | `x-admin-password` | Manual relay control (`channel: 1\|2`, `state: 'on'\|'off'`, `duration_sec <= MAX_RUN_SEC`) |
+| `GET /api/control/state` | Public | Read relay states, remaining seconds, online flag, last mix, and alerts |
+| `GET /api/control/config` | Public | Read automatic mixing configuration for a device |
+| `PUT /api/control/config` | `x-admin-password` | Validate and save automatic mixing configuration |
+| `GET /api/device/commands` | `x-api-key` | Tiny ESP32 polling payload: `{"relay1":true\|false,"relay2":true\|false}` |
 
 ---
 
@@ -61,11 +75,14 @@
    ```bash
    npm test
    ```
-   Verified result: 4/4 tests passing in `tests/api.test.js`, covering:
+   Verified result: 7/7 tests passing in `tests/api.test.js`, covering:
    - API key enforcement, payload range validation, in-memory buffering, 1-row averaging on `flush()`, and Google Sheets sync hook.
    - `GET /api/latest` DB fallback after restart.
    - `GET /api/stream` SSE `snapshot` and live `reading` push.
    - Manual `POST /api/ph`, pagination, CSV & XLSX exports, single-row delete, and `DELETE /api/readings/all` confirmation enforcement.
+   - Manual motor control (`POST /api/control`, `GET /api/control/state`, `GET /api/device/commands`), `MAX_RUN_SEC` cap, auto-off timer, and `control_log` audit entries.
+   - Automatic mixing rules (`PUT /api/control/config`, threshold triggers, cooldown enforcement, low-moisture `add_water` motor block, stale reading rejection, and manual `STOP` interrupting an active auto-run).
+   - Partial readings (missing/`null` sensors accepted, all-missing/invalid rejected, per-metric averaging on flush).
 
 2. **Frontend routes & static assets smoke check**:
    - Verified `200 OK` responses for `/api/health`, `/`, `/data`, `/assets/logo.png`, `/assets/station.png`, `/assets/background.jpg`, `/assets/favicon.png`, `/css/styles.css`, `/js/i18n.js`, `/js/common.js`, `/js/dashboard.js`, and `/js/data.js`.
@@ -84,3 +101,14 @@
 - **Render free-tier spin-down & single-instance memory**: Render's free tier sleeps after ~15 minutes of inactivity and runs a single Node process. Because the 60s averaging buffer lives in memory, a sudden platform sleep/restart discards any un-flushed partial (<60s) samples (already-flushed rows are safely persisted in Supabase, and graceful `SIGTERM` triggers a final `flush()`).
 - **Export row cap**: `GET /api/export.csv` and `GET /api/export.xlsx` cap queries at 10,000 rows per request (`maxRows = 10000`) to protect free-tier memory limits; use `?from=&to=` date filters for larger archives.
 - **Simple admin auth**: Admin authentication uses a shared `ADMIN_PASSWORD` stored in browser `sessionStorage` and sent in `x-admin-password`, per specification (no multi-user RBAC or JWT expiration).
+
+---
+
+## 5. Safety Design
+
+- **Fail-safe boot state**: Relay states live in memory and reset to `{ relay1: false, relay2: false }` on every server restart.
+- **Hard runtime cap**: Both manual (`POST /api/control`) and automatic mixing enforce `MAX_RUN_SEC` (default `60s`) with automatic server-side off timers.
+- **Immediate manual override**: `POST /api/control` with `state: "off"` always executes immediately and cancels any running timer (manual or automatic).
+- **Dry-compost motor interlock**: When `soil_moisture < moisture_min_alert`, automatic mixing is blocked and only an `add_water` alert is raised.
+- **Non-blocking telemetry**: Auto-mixing evaluation in `POST /api/readings` is wrapped in `try/catch` and database logging (`control_log`) fails safely without impacting sensor ingestion.
+- **Additive-only DB migration**: Existing `readings` columns (`temperature`, `soil_moisture`, `oxygen`) are already nullable; new tables `control_log` and `control_config` use `create table if not exists` and end with `notify pgrst, 'reload schema';`.

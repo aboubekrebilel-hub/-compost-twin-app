@@ -16,6 +16,7 @@ const config = {
   deviceApiKey: (process.env.DEVICE_API_KEY || '').trim(),
   adminPassword: (process.env.ADMIN_PASSWORD || '').trim(),
   storeIntervalSec: parsePositiveInt(process.env.STORE_INTERVAL_SEC, 60),
+  maxRunSec: parsePositiveInt(process.env.MAX_RUN_SEC, 60),
   googleSheetWebhook: (process.env.GOOGLE_SHEET_WEBHOOK || '').trim(),
   corsOrigin: (process.env.CORS_ORIGIN || '*').trim(),
 };

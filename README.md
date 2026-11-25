@@ -14,6 +14,10 @@ CompostTwin Station is a lightweight, full-stack IoT monitoring web application 
   - Automatic **Online / Offline** status badge (marks station offline if no data received for 30s).
   - Instant updates via **SSE (`GET /api/stream`)** with automatic **5-second polling fallback**.
   - Interactive **Chart.js** line charts with `1h`, `24h`, `7d`, and `custom` date-range selectors.
+  - **Partial Sensor Support**: accepts readings where one or two sensors are disconnected (`null`/omitted), displays `--`, and skips missing points in charts.
+  - **Admin Motor Control & Automatic Mixing**:
+    - 2-channel manual relay control (`START` with `10s/30s/60s` auto-off safety timer capped by `MAX_RUN_SEC`, immediate `STOP`, offline protection).
+    - Automatic mixing rules on Channel 1 (`temp_max`, `oxygen_min`, `moisture_max`, `moisture_min_alert` low-moisture water alert, `run_sec`, and `cooldown_min`).
 - **Data History & Admin (`/data`)**:
   - Paginated readings table with date-range filtering.
   - One-click **CSV** and **Excel (`.xlsx`)** exports respecting active date filters.
@@ -47,11 +51,12 @@ compost-twin/
 ├── scripts/
 │   └── seed.js                # Demo data generator (npm run seed)
 ├── sql/
-│   └── schema.sql             # Supabase Postgres table & indexes
+│   ├── schema.sql                  # Full Supabase Postgres schema & indexes
+│   └── migration_motor_control.sql # Additive SQL migration for existing deployments
 ├── src/
-│   ├── middleware/            # Auth (x-api-key, x-admin-password) & centralized error handling
-│   ├── routes/                # Express routes (readings, stream, ph, delete, export)
-│   ├── services/              # Supabase store, in-memory averaging buffer, SSE hub, Google Sheets
+│   ├── middleware/                 # Auth (x-api-key, x-admin-password) & centralized error handling
+│   ├── routes/                     # Express routes (readings, control, stream, ph, delete, export)
+│   ├── services/                   # Supabase stores, averaging buffer, motorControl, SSE hub, Sheets
 │   ├── utils/validators.js    # Strict payload & query validation
 │   ├── app.js                 # Express app factory (helmet, cors, rate-limit)
 │   ├── config.js              # Environment config loader
@@ -93,7 +98,36 @@ create index if not exists idx_readings_device_created_at
 create index if not exists idx_readings_ph_created_at
   on public.readings (created_at desc)
   where ph is not null;
+
+-- Motor control & automatic mixing tables (additive migration)
+create table if not exists public.control_log (
+  id bigint generated always as identity primary key,
+  device_id text not null,
+  channel integer not null check (channel in (1, 2)),
+  state text not null check (state in ('on', 'off')),
+  reason text not null check (reason in ('manual', 'temperature', 'oxygen', 'moisture')),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_control_log_device_created_at
+  on public.control_log (device_id, created_at desc);
+
+create table if not exists public.control_config (
+  device_id text primary key,
+  auto_enabled boolean not null default false,
+  temp_max double precision not null default 65,
+  oxygen_min double precision not null default 10,
+  moisture_max double precision not null default 65,
+  moisture_min_alert double precision not null default 35,
+  run_sec integer not null default 60,
+  cooldown_min integer not null default 30,
+  updated_at timestamptz not null default now()
+);
+
+notify pgrst, 'reload schema';
 ```
+
+> If upgrading an existing production database, run [`sql/migration_motor_control.sql`](./sql/migration_motor_control.sql) (additive only, never drops or alters existing columns).
 
 Copy your **Project URL** (`SUPABASE_URL`) and **Service Role Key** (recommended for backend-only servers, or `anon` key if RLS is configured) into `.env`.
 
@@ -115,6 +149,7 @@ cp .env.example .env
 | `DEVICE_API_KEY` | Yes | — | Secret key sent by ESP32 in `x-api-key` header |
 | `ADMIN_PASSWORD` | Yes | — | Password used for admin login & `x-admin-password` header |
 | `STORE_INTERVAL_SEC` | No | `60` | Interval in seconds for flushing averaged sensor rows to DB |
+| `MAX_RUN_SEC` | No | `60` | Safety cap (seconds) for continuous motor/relay runtime |
 | `GOOGLE_SHEET_WEBHOOK` | No | `""` | Optional Google Apps Script Web App URL |
 | `CORS_ORIGIN` | No | `*` | Allowed CORS origin(s) |
 
@@ -175,9 +210,15 @@ void sendReading(float tempC, float moisturePct, float oxygenPct) {
 
 ### Validation Ranges (`POST /api/readings`)
 - `device_id`: `1–64` characters matching `[a-zA-Z0-9._-]+`
-- `temperature`: `-20` to `100` (°C)
-- `soil_moisture`: `0` to `100` (%)
-- `oxygen`: `0` to `100` (%)
+- `temperature`: `-20` to `100` (°C) *(optional if another sensor is present)*
+- `soil_moisture`: `0` to `100` (%) *(optional if another sensor is present)*
+- `oxygen`: `0` to `100` (%) *(optional if another sensor is present)*
+
+### ESP32 Relay Polling (`GET /api/device/commands?device_id=station-01`)
+Send header `x-api-key` and parse the tiny JSON response:
+```json
+{"relay1":false,"relay2":false}
+```
 
 ---
 
@@ -210,3 +251,8 @@ void sendReading(float tempC, float moisturePct, float oxygenPct) {
 | `DELETE /api/readings/all` | `x-admin-password` | Delete all stored rows (requires `{ "confirm": true }` or `?confirm=true`) |
 | `GET /api/export.csv` | Public | Download filtered rows as CSV |
 | `GET /api/export.xlsx` | Public | Download filtered rows as Excel (`.xlsx`) |
+| `POST /api/control` | `x-admin-password` | Turn relay `1\|2` `on\|off` with `duration_sec` (`<= MAX_RUN_SEC`) |
+| `GET /api/control/state` | Public | Current relay state, remaining seconds, online status, last mix & alerts |
+| `GET /api/control/config` | Public | Read automatic mixing thresholds for `?device_id=` |
+| `PUT /api/control/config` | `x-admin-password` | Update automatic mixing thresholds & cooldown |
+| `GET /api/device/commands` | `x-api-key` | Tiny ESP32 JSON: `{"relay1":true\|false,"relay2":true\|false}` |

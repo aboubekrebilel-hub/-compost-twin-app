@@ -11,6 +11,8 @@ services:
         value: production
       - key: STORE_INTERVAL_SEC
         value: "60"
+      - key: MAX_RUN_SEC
+        value: "60"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_KEY
