@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CompostTwin Station — Données &amp; Admin</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand-link" aria-label="CompostTwin Station">
+        <div class="brand-logo-wrap">
+          <img id="brandLogoImg" src="/assets/logo.png" alt="CompostTwin Station" class="brand-logo-img" />
+          <span id="brandFallback" class="brand-fallback">
+            <svg width="28" height="28" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+              <circle cx="18" cy="18" r="18" fill="#2E7D5B" />
+              <path d="M11 23C11 16.5 16.2 12 24.5 12C24.5 19.5 20.2 24 13.5 24C12.5 24 11.7 23.7 11 23Z" fill="#FFFFFF" />
+              <path d="M10.5 25C13 21 16.5 18 21 16" stroke="#2E7D5B" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            <span>CompostTwin Station</span>
+          </span>
+        </div>
+      </a>
+
+      <nav class="header-nav" aria-label="Primary navigation">
+        <a href="/" class="nav-link" data-i18n="navDashboard">Tableau de bord</a>
+        <a href="/data" class="nav-link active" data-i18n="navData">Données &amp; Admin</a>
+      </nav>
+
+      <div class="header-controls">
+        <div id="headerStatusBadge" class="status-badge offline" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="headerStatusText" data-i18n="statusOffline">Hors ligne</span>
+        </div>
+
+        <div class="lang-switcher" role="group" aria-label="Language selector">
+          <button type="button" class="lang-btn active" data-lang="fr">FR</button>
+          <button type="button" class="lang-btn" data-lang="ar">AR</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+        </div>
+
+        <button type="button" id="adminAuthBtn" class="btn btn-secondary btn-sm" data-i18n="adminLogin">
+          Connexion Admin
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <div class="container">
+      <!-- Admin-only Manual pH Entry -->
+      <section class="card admin-only" style="margin-bottom: 1.5rem;">
+        <div class="section-header" style="margin-bottom: 0.75rem;">
+          <h2 class="section-title" data-i18n="manualPhTitle">Saisie manuelle du pH</h2>
+          <span class="health-pill" data-i18n="adminBadge">Mode Admin actif</span>
+        </div>
+        <form id="dataPhForm" class="form-grid cols-4">
+          <div class="field">
+            <label for="dataPhValue" data-i18n="phValueLabel">Valeur pH (0 - 14)</label>
+            <input id="dataPhValue" type="number" step="0.01" min="0" max="14" required class="input" placeholder="6.8" />
+          </div>
+          <div class="field">
+            <label for="dataPhNote" data-i18n="phNoteLabel">Note (optionnelle)</label>
+            <input id="dataPhNote" type="text" maxlength="500" class="input" data-i18n-placeholder="phNotePlaceholder" placeholder="Ex: Après retournement du tas" />
+          </div>
+          <div class="field">
+            <label for="dataPhTime" data-i18n="phTimeLabel">Date &amp; heure (optionnelle)</label>
+            <input id="dataPhTime" type="datetime-local" class="input" />
+          </div>
+          <div>
+            <button type="submit" class="btn btn-primary" data-i18n="phSubmitBtn">Enregistrer le pH</button>
+          </div>
+        </form>
+        <div id="dataPhFeedback" class="alert" style="display:none;"></div>
+      </section>
+
+      <!-- History Table & Export / Delete Toolbar -->
+      <section class="card">
+        <div class="section-header">
+          <div>
+            <h1 class="section-title" data-i18n="dataTitle">Historique des mesures enregistrées</h1>
+            <p style="margin:0.25rem 0 0;font-size:0.86rem;color:var(--text-muted);" data-i18n="dataSubtitle">
+              Une moyenne par minute est archivée automatiquement depuis les capteurs ESP32.
+            </p>
+          </div>
+          <div class="toolbar-group">
+            <a id="exportCsvBtn" href="/api/export.csv" class="btn btn-secondary btn-sm" data-i18n="exportCsv">
+              Exporter CSV
+            </a>
+            <a id="exportXlsxBtn" href="/api/export.xlsx" class="btn btn-primary btn-sm" data-i18n="exportXlsx">
+              Exporter Excel
+            </a>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="toolbar-group">
+            <div class="field">
+              <label for="filterFrom" data-i18n="fromLabel">Du</label>
+              <input id="filterFrom" type="datetime-local" class="input" />
+            </div>
+            <div class="field">
+              <label for="filterTo" data-i18n="toLabel">Au</label>
+              <input id="filterTo" type="datetime-local" class="input" />
+            </div>
+            <div class="field">
+              <label for="filterLimit">Rows</label>
+              <select id="filterLimit" class="input">
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <button type="button" id="applyFilterBtn" class="btn btn-primary btn-sm" data-i18n="applyBtn">
+              Appliquer
+            </button>
+            <button type="button" id="resetFilterBtn" class="btn btn-secondary btn-sm" data-i18n="resetBtn">
+              Réinitialiser
+            </button>
+          </div>
+
+          <div class="toolbar-group admin-only-flex">
+            <button type="button" id="deleteRangeBtn" class="btn btn-danger btn-sm" data-i18n="deleteRangeBtn">
+              Supprimer la période
+            </button>
+            <button type="button" id="deleteAllBtn" class="btn btn-danger btn-sm" data-i18n="deleteAllBtn">
+              Tout supprimer
+            </button>
+          </div>
+        </div>
+
+        <div id="tableFeedback" class="alert" style="display:none;margin-bottom:1rem;"></div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th data-i18n="colId">ID</th>
+                <th data-i18n="colDevice">Station</th>
+                <th data-i18n="colTemp">Temp. (°C)</th>
+                <th data-i18n="colMoisture">Humidité (%)</th>
+                <th data-i18n="colOxygen">Oxygène (%)</th>
+                <th data-i18n="colPh">pH</th>
+                <th data-i18n="colNote">Note</th>
+                <th data-i18n="colSource">Source</th>
+                <th data-i18n="colDate">Date / Heure</th>
+                <th class="admin-only-cell" data-i18n="colActions">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="readingsTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="pagination">
+          <span id="paginationInfo">—</span>
+          <div class="pagination-controls">
+            <button type="button" id="prevPageBtn" class="btn btn-secondary btn-sm" data-i18n="prevPage">
+              Précédent
+            </button>
+            <button type="button" id="nextPageBtn" class="btn btn-secondary btn-sm" data-i18n="nextPage">
+              Suivant
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <span data-i18n="footerText">AgriTech · IoT · IA · GreenTech · Économie circulaire</span>
+    </div>
+  </footer>
+
+  <!-- Admin Login Modal -->
+  <div id="adminLoginModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="loginModalTitle" class="modal-title" data-i18n="loginModalTitle">Accès Administrateur</h3>
+        <button type="button" id="adminModalClose" class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <form id="adminLoginForm">
+        <div class="field" style="margin-bottom: 1rem;">
+          <label for="adminPasswordInput" data-i18n="passwordLabel">Mot de passe administrateur</label>
+          <input id="adminPasswordInput" type="password" required class="input" autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" data-i18n="loginSubmit">
+          Se connecter
+        </button>
+        <div id="adminLoginError" class="alert alert-error" style="display:none;"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete All Explicit Confirmation Modal -->
+  <div id="deleteAllModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="deleteAllModalTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="deleteAllModalTitle" class="modal-title" data-i18n="deleteAllModalTitle">Confirmation requise</h3>
+        <button type="button" id="deleteAllClose" class="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <p style="margin:0 0 1rem;color:var(--text-muted);font-size:0.9rem;" data-i18n="deleteAllWarning">
+        Cette action supprimera définitivement TOUTES les mesures stockées dans la base de données.
+      </p>
+      <label style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:1.1rem;font-size:0.86rem;cursor:pointer;">
+        <input id="deleteAllConfirmCheck" type="checkbox" style="margin-top:0.2rem;" />
+        <span data-i18n="deleteAllCheck">Je comprends que cette suppression est irréversible.</span>
+      </label>
+      <div style="display:flex;justify-content:flex-end;gap:0.6rem;">
+        <button type="button" id="deleteAllCancel" class="btn btn-secondary btn-sm" data-i18n="cancelBtn">Annuler</button>
+        <button type="button" id="deleteAllConfirmBtn" class="btn btn-danger btn-sm" disabled data-i18n="confirmBtn">
+          Confirmer la suppression
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/i18n.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/data.js"></script>
+</body>
+</html>
