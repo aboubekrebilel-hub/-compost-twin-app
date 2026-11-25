@@ -4,6 +4,7 @@ const { roundTwo } = require('../utils/validators');
  * Keeps the latest sensor reading per device in memory for instant SSE/API delivery,
  * and accumulates incoming ~5s readings to flush ONE averaged row per device every
  * STORE_INTERVAL_SEC seconds to Supabase (and optional Google Sheets webhook).
+ * Supports partial readings (null/missing sensor fields are averaged only over present values).
  */
 class ReadingBuffer {
   constructor({ store, storeIntervalSec = 60, googleSheetWebhook = '', syncFn }) {
@@ -25,25 +26,59 @@ class ReadingBuffer {
   recordSensorReading(reading) {
     this.latestByDevice.set(reading.device_id, reading);
 
-    const existing = this.accumulator.get(reading.device_id);
-    if (!existing) {
-      this.accumulator.set(reading.device_id, {
+    let acc = this.accumulator.get(reading.device_id);
+    if (!acc) {
+      acc = {
         device_id: reading.device_id,
-        count: 1,
-        sumTemp: reading.temperature,
-        sumMoisture: reading.soil_moisture,
-        sumOxygen: reading.oxygen,
+        tempSum: 0,
+        tempCount: 0,
+        moistureSum: 0,
+        moistureCount: 0,
+        oxygenSum: 0,
+        oxygenCount: 0,
         lastTimestamp: reading.created_at,
-      });
-    } else {
-      existing.count += 1;
-      existing.sumTemp += reading.temperature;
-      existing.sumMoisture += reading.soil_moisture;
-      existing.sumOxygen += reading.oxygen;
-      existing.lastTimestamp = reading.created_at;
+      };
+      this.accumulator.set(reading.device_id, acc);
     }
 
+    if (typeof reading.temperature === 'number') {
+      acc.tempSum += reading.temperature;
+      acc.tempCount += 1;
+    }
+    if (typeof reading.soil_moisture === 'number') {
+      acc.moistureSum += reading.soil_moisture;
+      acc.moistureCount += 1;
+    }
+    if (typeof reading.oxygen === 'number') {
+      acc.oxygenSum += reading.oxygen;
+      acc.oxygenCount += 1;
+    }
+    acc.lastTimestamp = reading.created_at;
+
     return reading;
+  }
+
+  /**
+   * Return the most recent in-memory sensor reading for a device (if any).
+   */
+  getLatestForDevice(deviceId) {
+    return this.latestByDevice.get(deviceId) || null;
+  }
+
+  /**
+   * Return the most recently active device_id if known.
+   */
+  getPrimaryDeviceId() {
+    let latestDevice = null;
+    let latestTime = -1;
+    for (const [id, row] of this.latestByDevice.entries()) {
+      const ts = new Date(row.created_at).getTime();
+      if (ts > latestTime) {
+        latestTime = ts;
+        latestDevice = id;
+      }
+    }
+    return latestDevice;
   }
 
   /**
@@ -117,9 +152,9 @@ class ReadingBuffer {
 
     const averagedRows = snapshotEntries.map(([deviceId, acc]) => ({
       device_id: deviceId,
-      temperature: roundTwo(acc.sumTemp / acc.count),
-      soil_moisture: roundTwo(acc.sumMoisture / acc.count),
-      oxygen: roundTwo(acc.sumOxygen / acc.count),
+      temperature: acc.tempCount > 0 ? roundTwo(acc.tempSum / acc.tempCount) : null,
+      soil_moisture: acc.moistureCount > 0 ? roundTwo(acc.moistureSum / acc.moistureCount) : null,
+      oxygen: acc.oxygenCount > 0 ? roundTwo(acc.oxygenSum / acc.oxygenCount) : null,
       ph: null,
       note: null,
       source: 'sensor',

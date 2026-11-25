@@ -190,6 +190,115 @@
         <div id="dashPhFeedback" class="alert" style="display:none;"></div>
       </section>
 
+      <!-- Admin-only Motor Control & Automatic Mixing -->
+      <section id="motorControlCard" class="card admin-only" style="margin-bottom: 1.5rem;">
+        <div class="section-header" style="margin-bottom: 0.75rem;">
+          <h2 class="section-title" data-i18n="motorControlTitle">Contrôle du moteur</h2>
+          <span class="health-pill" data-i18n="adminBadge">Mode Admin actif</span>
+        </div>
+
+        <div id="motorOfflineAlert" class="alert alert-warning" style="display:none;margin-top:0;margin-bottom:1rem;" data-i18n="motorOfflineWarn">
+          Station hors ligne — commandes START/STOP désactivées.
+        </div>
+
+        <div id="addWaterAlert" class="alert alert-warning" style="display:none;margin-top:0;margin-bottom:1rem;" data-i18n="addWaterWarn">
+          Alerte humidité basse : ajoutez de l’eau au compost ! Le moteur est bloqué.
+        </div>
+
+        <div class="motor-channels-grid">
+          <div class="motor-channel-box">
+            <div class="motor-channel-header">
+              <span class="motor-channel-title" data-i18n="channel1Label">Canal 1 — Moteur de brassage</span>
+              <span id="relay1Badge" class="relay-badge">OFF</span>
+            </div>
+            <div class="motor-actions-row">
+              <select id="relay1Duration" class="input motor-duration-select" aria-label="Channel 1 duration">
+                <option value="10">10s</option>
+                <option value="30">30s</option>
+                <option value="60" selected>60s</option>
+              </select>
+              <button type="button" id="relay1StartBtn" class="btn btn-motor-start" data-i18n="motorStartBtn">START</button>
+              <button type="button" id="relay1StopBtn" class="btn btn-motor-stop" data-i18n="motorStopBtn">STOP</button>
+            </div>
+          </div>
+
+          <div class="motor-channel-box">
+            <div class="motor-channel-header">
+              <span class="motor-channel-title" data-i18n="channel2Label">Canal 2 — Relais auxiliaire</span>
+              <span id="relay2Badge" class="relay-badge">OFF</span>
+            </div>
+            <div class="motor-actions-row">
+              <select id="relay2Duration" class="input motor-duration-select" aria-label="Channel 2 duration">
+                <option value="10">10s</option>
+                <option value="30">30s</option>
+                <option value="60" selected>60s</option>
+              </select>
+              <button type="button" id="relay2StartBtn" class="btn btn-motor-start" data-i18n="motorStartBtn">START</button>
+              <button type="button" id="relay2StopBtn" class="btn btn-motor-stop" data-i18n="motorStopBtn">STOP</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="motorCmdFeedback" class="alert" style="display:none;margin-bottom:1rem;"></div>
+
+        <!-- Automatic Mixing Rules -->
+        <div class="auto-mix-box">
+          <form id="autoConfigForm">
+            <div class="auto-mix-header">
+              <h3 class="section-title" style="font-size:1rem;" data-i18n="autoMixTitle">Brassage automatique (Canal 1)</h3>
+              <label class="toggle-switch">
+                <input id="autoEnabledInput" type="checkbox" />
+                <span data-i18n="autoEnabledLabel">Mode automatique</span>
+              </label>
+            </div>
+
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label for="cfgTempMax" data-i18n="tempMaxLabel">Température max (°C)</label>
+                <input id="cfgTempMax" type="number" step="0.5" min="30" max="90" required class="input" value="65" />
+              </div>
+              <div class="field">
+                <label for="cfgOxygenMin" data-i18n="oxygenMinLabel">Oxygène min (%)</label>
+                <input id="cfgOxygenMin" type="number" step="0.5" min="1" max="21" required class="input" value="10" />
+              </div>
+              <div class="field">
+                <label for="cfgMoistureMax" data-i18n="moistureMaxLabel">Humidité max (%)</label>
+                <input id="cfgMoistureMax" type="number" step="1" min="0" max="100" required class="input" value="65" />
+              </div>
+              <div class="field">
+                <label for="cfgMoistureMinAlert" data-i18n="moistureMinAlertLabel">Alerte humidité min (%)</label>
+                <input id="cfgMoistureMinAlert" type="number" step="1" min="0" max="100" required class="input" value="35" />
+              </div>
+              <div class="field">
+                <label for="cfgRunSec" data-i18n="runSecLabel">Durée marche (s)</label>
+                <input id="cfgRunSec" type="number" step="1" min="5" max="60" required class="input" value="60" />
+              </div>
+              <div class="field">
+                <label for="cfgCooldownMin" data-i18n="cooldownMinLabel">Délai repos (min)</label>
+                <input id="cfgCooldownMin" type="number" step="1" min="1" max="1440" required class="input" value="30" />
+              </div>
+            </div>
+
+            <div style="margin-top:0.9rem;">
+              <button type="submit" class="btn btn-primary btn-sm" data-i18n="saveConfigBtn">Enregistrer la config</button>
+            </div>
+          </form>
+
+          <div id="autoConfigFeedback" class="alert" style="display:none;"></div>
+
+          <div class="auto-status-bar">
+            <span>
+              <span data-i18n="lastMixLabel">Dernier brassage</span>:
+              <strong id="lastMixValue">—</strong>
+            </span>
+            <span>
+              <span data-i18n="nextMixLabel">Prochain brassage possible dans</span>:
+              <strong id="nextMixValue">—</strong>
+            </span>
+          </div>
+        </div>
+      </section>
+
       <!-- Charts -->
       <section>
         <div class="section-header">

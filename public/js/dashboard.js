@@ -5,6 +5,8 @@
     devicesById: new Map(),
     selectedDeviceId: null,
     latestPh: null,
+    controlStatesByDevice: new Map(),
+    controlConfigsByDevice: new Map(),
     range: '24h',
     customFrom: null,
     customTo: null,
@@ -87,9 +89,9 @@
     const lastUpdateEl = document.getElementById('lastUpdateValue');
 
     if (reading) {
-      tempEl.textContent = reading.temperature != null ? Number(reading.temperature).toFixed(1) : '—';
-      moistEl.textContent = reading.soil_moisture != null ? Number(reading.soil_moisture).toFixed(1) : '—';
-      oxyEl.textContent = reading.oxygen != null ? Number(reading.oxygen).toFixed(1) : '—';
+      tempEl.textContent = reading.temperature != null ? Number(reading.temperature).toFixed(1) : '--';
+      moistEl.textContent = reading.soil_moisture != null ? Number(reading.soil_moisture).toFixed(1) : '--';
+      oxyEl.textContent = reading.oxygen != null ? Number(reading.oxygen).toFixed(1) : '--';
       lastUpdateEl.textContent = formatDateTime(reading.created_at);
 
       renderHealthPill('pillTemp', 'temperature', reading.temperature);
@@ -97,9 +99,9 @@
       renderHealthPill('pillOxygen', 'oxygen', reading.oxygen);
       updateOnlineBadge(reading.created_at);
     } else {
-      tempEl.textContent = '—';
-      moistEl.textContent = '—';
-      oxyEl.textContent = '—';
+      tempEl.textContent = '--';
+      moistEl.textContent = '--';
+      oxyEl.textContent = '--';
       lastUpdateEl.textContent = t('never');
       renderHealthPill('pillTemp', 'temperature', null);
       renderHealthPill('pillMoisture', 'soil_moisture', null);
@@ -142,8 +144,161 @@
     if (snapshot.latest_ph !== undefined) {
       state.latestPh = snapshot.latest_ph;
     }
+    if (Array.isArray(snapshot.control_states)) {
+      for (const cs of snapshot.control_states) {
+        if (cs && cs.device_id) {
+          cacheControlState(cs);
+        }
+      }
+    }
     renderDeviceSelect();
     renderKpis();
+    renderMotorControl();
+  }
+
+  function activeControlDeviceId() {
+    return state.selectedDeviceId || 'station-01';
+  }
+
+  function cacheControlState(cs) {
+    if (!cs || !cs.device_id) return;
+    const now = Date.now();
+    state.controlStatesByDevice.set(cs.device_id, {
+      ...cs,
+      _receivedAtMs: now,
+      _relay1BaseRemaining: cs.relay1_remaining_sec || 0,
+      _relay2BaseRemaining: cs.relay2_remaining_sec || 0,
+      _nextMixBaseSec: cs.next_mix_in_sec || 0,
+    });
+  }
+
+  function isCurrentDeviceOnline() {
+    const devId = activeControlDeviceId();
+    const reading = state.devicesById.get(devId);
+    if (reading && reading.created_at) {
+      return Date.now() - new Date(reading.created_at).getTime() <= 30000;
+    }
+    const cs = state.controlStatesByDevice.get(devId);
+    return Boolean(cs && cs.online);
+  }
+
+  function formatMmSs(totalSeconds) {
+    const s = Math.max(0, Math.floor(totalSeconds));
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  }
+
+  function translateMixReason(reason) {
+    if (reason === 'temperature') return t('reasonTemperature');
+    if (reason === 'oxygen') return t('reasonOxygen');
+    if (reason === 'moisture') return t('reasonMoisture');
+    return t('reasonManual');
+  }
+
+  function renderMotorControl() {
+    const card = document.getElementById('motorControlCard');
+    if (!card) return;
+
+    const devId = activeControlDeviceId();
+    const cs = state.controlStatesByDevice.get(devId);
+    const online = isCurrentDeviceOnline();
+
+    const offlineAlert = document.getElementById('motorOfflineAlert');
+    if (offlineAlert) offlineAlert.style.display = online ? 'none' : 'block';
+
+    const waterAlert = document.getElementById('addWaterAlert');
+    if (waterAlert) {
+      waterAlert.style.display = cs && cs.alerts && cs.alerts.add_water ? 'block' : 'none';
+    }
+
+    const elapsedSec = cs ? Math.floor((Date.now() - cs._receivedAtMs) / 1000) : 0;
+
+    [1, 2].forEach((ch) => {
+      const startBtn = document.getElementById(`relay${ch}StartBtn`);
+      const stopBtn = document.getElementById(`relay${ch}StopBtn`);
+      const durSelect = document.getElementById(`relay${ch}Duration`);
+      const badge = document.getElementById(`relay${ch}Badge`);
+      const isOn = Boolean(cs && cs[`relay${ch}`]);
+      const baseRem = cs ? cs[`_relay${ch}BaseRemaining`] : 0;
+      const rem = isOn ? Math.max(0, baseRem - elapsedSec) : 0;
+
+      if (badge) {
+        badge.classList.toggle('on', isOn);
+        badge.textContent = isOn
+          ? `${t('relayOn')}${rem > 0 ? ` · ${rem}s` : ''}`
+          : t('relayOff');
+      }
+
+      if (startBtn) startBtn.disabled = !online;
+      if (stopBtn) stopBtn.disabled = !online;
+      if (durSelect) {
+        durSelect.disabled = !online;
+        const maxRun = cs && cs.max_run_sec ? cs.max_run_sec : 60;
+        Array.from(durSelect.options).forEach((opt) => {
+          opt.disabled = Number(opt.value) > maxRun;
+        });
+      }
+    });
+
+    const lastMixEl = document.getElementById('lastMixValue');
+    if (lastMixEl) {
+      if (cs && cs.last_mix && cs.last_mix.at) {
+        lastMixEl.textContent = `${formatDateTime(cs.last_mix.at)} · ${translateMixReason(cs.last_mix.reason)}`;
+      } else {
+        lastMixEl.textContent = t('noMixYet');
+      }
+    }
+
+    const nextMixEl = document.getElementById('nextMixValue');
+    if (nextMixEl) {
+      const nextRem = cs ? Math.max(0, cs._nextMixBaseSec - elapsedSec) : 0;
+      nextMixEl.textContent = nextRem > 0 ? formatMmSs(nextRem) : t('nextMixReady');
+    }
+  }
+
+  function applyConfigToForm(cfg) {
+    if (!cfg) return;
+    const enabledEl = document.getElementById('autoEnabledInput');
+    const tempEl = document.getElementById('cfgTempMax');
+    const oxyEl = document.getElementById('cfgOxygenMin');
+    const moistMaxEl = document.getElementById('cfgMoistureMax');
+    const moistMinEl = document.getElementById('cfgMoistureMinAlert');
+    const runSecEl = document.getElementById('cfgRunSec');
+    const cooldownEl = document.getElementById('cfgCooldownMin');
+
+    if (enabledEl) enabledEl.checked = Boolean(cfg.auto_enabled);
+    if (tempEl) tempEl.value = cfg.temp_max;
+    if (oxyEl) oxyEl.value = cfg.oxygen_min;
+    if (moistMaxEl) moistMaxEl.value = cfg.moisture_max;
+    if (moistMinEl) moistMinEl.value = cfg.moisture_min_alert;
+    if (runSecEl) {
+      const cs = state.controlStatesByDevice.get(activeControlDeviceId());
+      if (cs && cs.max_run_sec) runSecEl.max = String(cs.max_run_sec);
+      runSecEl.value = cfg.run_sec;
+    }
+    if (cooldownEl) cooldownEl.value = cfg.cooldown_min;
+  }
+
+  async function fetchControlData() {
+    const devId = activeControlDeviceId();
+    try {
+      const [stateRes, cfgRes] = await Promise.all([
+        fetch(`/api/control/state?device_id=${encodeURIComponent(devId)}`),
+        fetch(`/api/control/config?device_id=${encodeURIComponent(devId)}`),
+      ]);
+      if (stateRes.ok) {
+        cacheControlState(await stateRes.json());
+        renderMotorControl();
+      }
+      if (cfgRes.ok) {
+        const cfg = await cfgRes.json();
+        state.controlConfigsByDevice.set(cfg.device_id, cfg);
+        applyConfigToForm(cfg);
+      }
+    } catch {
+      // ignore transient network errors
+    }
   }
 
   function handleIncomingReading(reading) {
@@ -151,6 +306,7 @@
     state.devicesById.set(reading.device_id, reading);
     renderDeviceSelect();
     renderKpis();
+    renderMotorControl();
   }
 
   async function fetchLatestFallback() {
@@ -159,6 +315,7 @@
       if (!res.ok) return;
       const snapshot = await res.json();
       applySnapshot(snapshot);
+      await fetchControlData();
     } catch {
       // Keep current display on temporary network hiccup
     }
@@ -235,7 +392,31 @@
       state.latestPh = null;
       renderDeviceSelect();
       renderKpis();
+      renderMotorControl();
       loadCharts();
+    });
+
+    sse.addEventListener('control_state', (e) => {
+      try {
+        cacheControlState(JSON.parse(e.data));
+        renderMotorControl();
+      } catch {
+        // ignore malformed frame
+      }
+    });
+
+    sse.addEventListener('control_config', (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        if (payload && payload.config) {
+          state.controlConfigsByDevice.set(payload.config.device_id, payload.config);
+          if (payload.config.device_id === activeControlDeviceId()) {
+            applyConfigToForm(payload.config);
+          }
+        }
+      } catch {
+        // ignore malformed frame
+      }
     });
 
     sse.onerror = () => {
@@ -352,7 +533,7 @@
         'chartTemp',
         t('chartTemp'),
         sensorLabels,
-        sensorRows.map((r) => r.temperature),
+        sensorRows.map((r) => (r.temperature != null ? r.temperature : null)),
         '#4CAF7A',
         'rgba(76, 175, 122, 0.18)'
       );
@@ -360,7 +541,7 @@
         'chartMoisture',
         t('chartMoisture'),
         sensorLabels,
-        sensorRows.map((r) => r.soil_moisture),
+        sensorRows.map((r) => (r.soil_moisture != null ? r.soil_moisture : null)),
         '#6EE7B7',
         'rgba(110, 231, 183, 0.16)'
       );
@@ -368,7 +549,7 @@
         'chartOxygen',
         t('chartOxygen'),
         sensorLabels,
-        sensorRows.map((r) => r.oxygen),
+        sensorRows.map((r) => (r.oxygen != null ? r.oxygen : null)),
         '#93C5FD',
         'rgba(147, 197, 253, 0.16)'
       );
@@ -464,31 +645,157 @@
     });
   }
 
+  function setupMotorControl() {
+    const cmdFeedback = document.getElementById('motorCmdFeedback');
+    const cfgFeedback = document.getElementById('autoConfigFeedback');
+
+    async function sendRelayCommand(channel, relayState) {
+      if (cmdFeedback) cmdFeedback.style.display = 'none';
+      const durSelect = document.getElementById(`relay${channel}Duration`);
+      const durationSec = durSelect ? Number(durSelect.value) : 60;
+      const body = {
+        device_id: activeControlDeviceId(),
+        channel,
+        state: relayState,
+      };
+      if (relayState === 'on') {
+        body.duration_sec = durationSec;
+      }
+
+      try {
+        const res = await fetch('/api/control', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-password': getAdminPassword(),
+          },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (cmdFeedback) {
+            cmdFeedback.className = 'alert alert-error';
+            cmdFeedback.textContent = data.details ? data.details.join(' ') : data.error || 'Command error';
+            cmdFeedback.style.display = 'block';
+          }
+          return;
+        }
+        cacheControlState(data.state);
+        renderMotorControl();
+        if (cmdFeedback) {
+          cmdFeedback.className = 'alert alert-success';
+          cmdFeedback.textContent = t('motorCmdSuccess', {
+            ch: channel,
+            state: relayState.toUpperCase(),
+          });
+          cmdFeedback.style.display = 'block';
+        }
+      } catch (err) {
+        if (cmdFeedback) {
+          cmdFeedback.className = 'alert alert-error';
+          cmdFeedback.textContent = err.message;
+          cmdFeedback.style.display = 'block';
+        }
+      }
+    }
+
+    [1, 2].forEach((ch) => {
+      const startBtn = document.getElementById(`relay${ch}StartBtn`);
+      const stopBtn = document.getElementById(`relay${ch}StopBtn`);
+      if (startBtn) startBtn.addEventListener('click', () => sendRelayCommand(ch, 'on'));
+      if (stopBtn) stopBtn.addEventListener('click', () => sendRelayCommand(ch, 'off'));
+    });
+
+    const configForm = document.getElementById('autoConfigForm');
+    if (configForm) {
+      configForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (cfgFeedback) cfgFeedback.style.display = 'none';
+
+        const payload = {
+          device_id: activeControlDeviceId(),
+          auto_enabled: document.getElementById('autoEnabledInput').checked,
+          temp_max: Number(document.getElementById('cfgTempMax').value),
+          oxygen_min: Number(document.getElementById('cfgOxygenMin').value),
+          moisture_max: Number(document.getElementById('cfgMoistureMax').value),
+          moisture_min_alert: Number(document.getElementById('cfgMoistureMinAlert').value),
+          run_sec: Number(document.getElementById('cfgRunSec').value),
+          cooldown_min: Number(document.getElementById('cfgCooldownMin').value),
+        };
+
+        try {
+          const res = await fetch('/api/control/config', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-admin-password': getAdminPassword(),
+            },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            if (cfgFeedback) {
+              cfgFeedback.className = 'alert alert-error';
+              cfgFeedback.textContent = data.details ? data.details.join(' ') : data.error || 'Save error';
+              cfgFeedback.style.display = 'block';
+            }
+            return;
+          }
+          state.controlConfigsByDevice.set(data.config.device_id, data.config);
+          applyConfigToForm(data.config);
+          if (cfgFeedback) {
+            cfgFeedback.className = 'alert alert-success';
+            cfgFeedback.textContent = t('configSavedMsg');
+            cfgFeedback.style.display = 'block';
+          }
+        } catch (err) {
+          if (cfgFeedback) {
+            cfgFeedback.className = 'alert alert-error';
+            cfgFeedback.textContent = err.message;
+            cfgFeedback.style.display = 'block';
+          }
+        }
+      });
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     const deviceSelect = document.getElementById('deviceSelect');
     if (deviceSelect) {
       deviceSelect.addEventListener('change', (e) => {
         state.selectedDeviceId = e.target.value;
         renderKpis();
+        renderMotorControl();
+        fetchControlData();
         loadCharts();
       });
     }
 
     setupRangeButtons();
     setupManualPhForm();
+    setupMotorControl();
 
     fetchLatestFallback();
     connectSse();
     loadCharts();
 
-    // Re-evaluate 30s online/offline threshold continuously
-    setInterval(renderKpis, 2000);
+    // Re-evaluate 30s online/offline threshold & countdown timers every second
+    setInterval(() => {
+      renderKpis();
+      renderMotorControl();
+    }, 1000);
     // Refresh history charts periodically
     setInterval(loadCharts, 60000);
 
     window.addEventListener('langChanged', () => {
       renderKpis();
+      renderMotorControl();
       loadCharts();
+    });
+
+    window.addEventListener('adminAuthChanged', () => {
+      fetchControlData();
+      renderMotorControl();
     });
   });
 })();

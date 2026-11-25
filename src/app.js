@@ -6,7 +6,9 @@ const rateLimit = require('express-rate-limit');
 
 const defaultConfig = require('./config');
 const { createReadingsStore } = require('./services/readingsStore');
+const { createControlStore } = require('./services/controlStore');
 const { ReadingBuffer } = require('./services/readingBuffer');
+const { MotorControlService } = require('./services/motorControl');
 const { SseHub } = require('./services/sseHub');
 const { syncRowToGoogleSheets } = require('./services/googleSheets');
 const {
@@ -16,6 +18,7 @@ const {
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const { createReadingsRouter } = require('./routes/readings');
 const { createExportRouter } = require('./routes/export');
+const { createControlRouter } = require('./routes/control');
 
 /**
  * Build and configure the Express application.
@@ -29,6 +32,12 @@ function createApp(overrides = {}) {
       supabaseUrl: config.supabaseUrl,
       supabaseKey: config.supabaseKey,
     });
+  const controlStore =
+    overrides.controlStore ||
+    createControlStore({
+      supabaseUrl: config.supabaseUrl,
+      supabaseKey: config.supabaseKey,
+    });
   const syncFn = overrides.syncFn || syncRowToGoogleSheets;
   const sseHub = overrides.sseHub || new SseHub();
   const buffer =
@@ -38,6 +47,14 @@ function createApp(overrides = {}) {
       storeIntervalSec: config.storeIntervalSec,
       googleSheetWebhook: config.googleSheetWebhook,
       syncFn,
+    });
+  const motorControl =
+    overrides.motorControl ||
+    new MotorControlService({
+      controlStore,
+      readingBuffer: buffer,
+      sseHub,
+      maxRunSec: config.maxRunSec,
     });
 
   const app = express();
@@ -120,12 +137,24 @@ function createApp(overrides = {}) {
       store,
       buffer,
       sseHub,
+      motorControl,
       requireDeviceApiKey,
       requireAdminPassword,
       deviceLimiter,
       adminLimiter,
       googleSheetWebhook: config.googleSheetWebhook,
       syncFn,
+    })
+  );
+  app.use(
+    '/api',
+    createControlRouter({
+      motorControl,
+      readingBuffer: buffer,
+      requireDeviceApiKey,
+      requireAdminPassword,
+      deviceLimiter,
+      adminLimiter,
     })
   );
   app.use('/api', createExportRouter({ store }));
@@ -147,7 +176,7 @@ function createApp(overrides = {}) {
 
   app.use(errorHandler);
 
-  return { app, buffer, sseHub, store, config };
+  return { app, buffer, sseHub, store, controlStore, motorControl, config };
 }
 
 module.exports = { createApp };

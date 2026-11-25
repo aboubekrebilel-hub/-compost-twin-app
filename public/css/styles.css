@@ -701,6 +701,173 @@ body.is-admin .admin-only-cell {
   color: #ffc2b8;
 }
 
+.alert-warning {
+  background: rgba(242, 184, 75, 0.18);
+  border: 1px solid rgba(242, 184, 75, 0.55);
+  color: #ffe3a3;
+}
+
+/* Motor Control & Auto Mixing */
+.motor-channels-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.motor-channel-box {
+  background: rgba(13, 39, 31, 0.65);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.motor-channel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.motor-channel-title {
+  font-weight: 600;
+  font-size: 0.96rem;
+}
+
+.relay-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: rgba(183, 211, 198, 0.12);
+  color: var(--text-muted);
+}
+
+.relay-badge.on {
+  background: rgba(76, 175, 122, 0.24);
+  color: #9bf0be;
+  border: 1px solid rgba(76, 175, 122, 0.55);
+}
+
+.motor-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.motor-duration-select {
+  width: auto;
+  min-width: 82px;
+}
+
+.btn-motor-start {
+  flex: 1;
+  min-width: 110px;
+  padding: 0.68rem 1.1rem;
+  font-size: 0.95rem;
+  background: var(--accent);
+  color: #0b261c;
+}
+
+.btn-motor-start:hover:not(:disabled) {
+  background: #5ec08b;
+}
+
+.btn-motor-stop {
+  flex: 1;
+  min-width: 110px;
+  padding: 0.68rem 1.1rem;
+  font-size: 0.95rem;
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.btn-motor-stop:hover:not(:disabled) {
+  background: #f07662;
+}
+
+.auto-mix-box {
+  border-top: 1px solid var(--card-border);
+  padding-top: 1.15rem;
+}
+
+.auto-mix-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.toggle-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.toggle-switch input {
+  appearance: none;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(183, 211, 198, 0.25);
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.toggle-switch input::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked {
+  background: var(--accent);
+}
+
+.toggle-switch input:checked::after {
+  transform: translateX(20px);
+}
+
+.auto-status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
+  margin-top: 0.9rem;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+@media (min-width: 760px) {
+  .motor-channels-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 960px) {
+  .form-grid.cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 /* Modal */
 .modal-backdrop {
   position: fixed;

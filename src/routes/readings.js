@@ -18,6 +18,7 @@ function createReadingsRouter({
   store,
   buffer,
   sseHub,
+  motorControl,
   requireDeviceApiKey,
   requireAdminPassword,
   deviceLimiter,
@@ -41,6 +42,9 @@ function createReadingsRouter({
     '/stream',
     asyncHandler(async (req, res) => {
       const snapshot = await buffer.getLatestSnapshot();
+      if (motorControl) {
+        snapshot.control_states = motorControl.getAllSerializedStates();
+      }
       sseHub.addClient(req, res, snapshot);
     })
   );
@@ -93,6 +97,14 @@ function createReadingsRouter({
         reading,
         server_time: new Date().toISOString(),
       });
+
+      if (motorControl) {
+        try {
+          motorControl.evaluateReading(reading);
+        } catch (err) {
+          console.warn('[Readings] Auto-mixing evaluation failed:', err.message);
+        }
+      }
 
       res.status(201).json({
         ok: true,
